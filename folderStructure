@@ -1,0 +1,27 @@
+smart-crop-health
+│
+├── dataset
+│   ├── train
+│   └── test
+│
+├── models
+│   └── plant_disease_model.h5
+│
+├── training
+│   ├── train.py
+│   ├── model_compare.py
+│   ├── hyperparameter_tuning.py
+│
+├── evaluation
+│   ├── metrics.py
+│   ├── confusion_matrix.py
+│
+├── explainability
+│   └── gradcam.py
+│
+├── deployment
+│   └── convert_tflite.py
+│
+├── predict.py
+├── app.py
+├── requirements.txt

@@ -1,10 +1,5 @@
 # 🌿 CropSense AI — Smart Crop Disease Monitoring & Decision Support System
 
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-DeepLearning-orange)
-![Flask](https://img.shields.io/badge/Backend-Flask-black)
-![License](https://img.shields.io/badge/License-MIT-green)
-
 An end-to-end AI-powered crop disease prediction, monitoring, and decision support system. Built with Multi-Task Learning, Multi-Modal inputs, Explainable AI, temporal disease tracking, and an intelligent AI assistant.
 
 This project presents a production-grade, end-to-end intelligent system for crop disease detection, severity estimation, and adaptive decision support, designed to enable next-generation precision agriculture.
@@ -86,7 +81,7 @@ smart-crop-health/
 │   ├── gradcam.py          # Grad-CAM standalone
 │   ├── predict.py          # CLI predictor
 │   ├── severity_detection.py
-│   ├── recommendation.py
+│   ├── recomendation.py
 │   └── utils/
 │       └── download_model.py
 │
@@ -169,15 +164,4 @@ The system tracks:
 
 ---
 
-## 📄 License
-
-This project is licensed under the MIT License.
-
-
-
-
-
-
-
-
-
+*Built for smart agriculture — powered by multi-task AI with decision support.*
