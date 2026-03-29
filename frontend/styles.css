@@ -472,4 +472,17 @@ body { font-family: var(--font-body); background: var(--bg-dark); color: var(--t
   .dash-stats-grid { grid-template-columns: 1fr; }
   .innovation-grid { grid-template-columns: 1fr; }
   .mm-body { grid-template-columns: 1fr; }
+  .chatbot-window { width: calc(100vw - 48px); right: 24px; bottom: 80px; position: fixed; }
 }
+
+/* Floating Chatbot */
+.floating-chatbot { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; }
+.chatbot-toggle-btn { background: linear-gradient(135deg, var(--green-500), var(--green-600)); color: white; border: none; padding: 14px 24px; border-radius: 99px; font-family: var(--font-body); font-size: 1rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 20px rgba(34,197,94,0.35); transition: all var(--transition); display: flex; align-items: center; gap: 8px; }
+.chatbot-toggle-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 32px rgba(34,197,94,0.5); }
+.chatbot-window { width: 350px; max-height: 500px; background: rgba(10,20,12,0.95); border-radius: var(--radius-lg); margin-bottom: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.6); border: 1px solid var(--border); backdrop-filter: blur(20px); }
+.chatbot-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.03); }
+.chatbot-header h4 { font-family: var(--font-head); font-size: 1.1rem; color: var(--green-400); margin: 0; display: flex; gap: 8px; align-items: center; }
+.chatbot-thread { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 280px; }
+.chatbot-input-area { display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+.chatbot-input-area input { flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 10px 14px; color: white; border-radius: 8px; font-family: var(--font-body); font-size: 0.85rem; outline: none; transition: border-color var(--transition); }
+.chatbot-input-area input:focus { border-color: var(--green-400); }

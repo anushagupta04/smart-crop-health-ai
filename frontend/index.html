@@ -337,6 +337,10 @@
                 <option value="maturity">Maturity</option>
               </select>
             </div>
+            <div class="mm-group">
+              <label>📛 Plant ID (Optional)</label>
+              <input type="text" id="inputPlantId" placeholder="e.g. PLANT-123" />
+            </div>
           </div>
         </div>
 
@@ -452,6 +456,7 @@
                   <div class="disease-badge" id="diseaseBadge">Analyzing…</div>
                   <h3 class="disease-name" id="diseaseName">—</h3>
                   <p class="disease-desc" id="diseaseDesc">—</p>
+                  <p class="plant-id-badge" id="plantIdBadge" style="margin-top: 6px; font-size: 13px; opacity: 0.9; color: var(--green-400); font-weight: 500;"></p>
                 </div>
               </div>
               <div class="confidence-section">
@@ -548,6 +553,8 @@
               <div class="future-header">📈 Future Severity Prediction</div>
               <div class="future-content" id="futureContent"></div>
             </div>
+
+            <!-- Chatbot UI removed from here onto a floating module -->
           </div>
 
           <!-- Environmental Data Display (if provided) -->
@@ -559,6 +566,17 @@
               <span>Environmental Conditions Used</span>
             </div>
             <div class="env-grid" id="envGrid"></div>
+          </div>
+
+          <!-- History Data -->
+          <div class="result-card glass-card history-card" id="historyCard" style="display:none">
+            <div class="card-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span>Past Records For This Plant</span>
+            </div>
+            <div class="history-list" id="historyList" style="margin-top: 12px; display: grid; gap: 8px;"></div>
           </div>
 
           <!-- Recommendations -->
@@ -773,6 +791,30 @@
     <div class="disease-grid" id="diseaseGrid"></div>
   </div>
 </section>
+
+<!-- Floating Chatbot Widget -->
+<div id="floatingChatbot" class="floating-chatbot">
+  <div id="chatbotWindow" class="chatbot-window glass-card" style="display: none;">
+    <div class="chatbot-header">
+      <h4>💬 CropSense AI</h4>
+      <button id="chatbotClose" class="btn-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="chatbotThreadGlobal" class="chatbot-thread">
+      <div style="align-self: flex-start; text-align: left; background: rgba(22,163,74,0.1); color: var(--green-400); padding: 8px 12px; border-radius: 6px; font-size: 13px; max-width: 85%;"><strong>AI:</strong> Hello! Upload a leaf image to start talking about your plant's health, or I can answer general questions if you have a Plant ID previously analyzed.</div>
+    </div>
+    <div class="chatbot-input-area">
+      <input type="text" id="chatInputGlobal" placeholder="Type a message..." />
+      <button id="chatBtnGlobal" class="btn btn-outline" style="padding: 10px 16px;">Ask</button>
+    </div>
+  </div>
+  <button id="chatbotToggle" class="chatbot-toggle-btn">
+    💬 Chat with AI
+  </button>
+</div>
+
+
 
 <!-- ════════════ ABOUT ════════════ -->
 <section class="about-section" id="about">

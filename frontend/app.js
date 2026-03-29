@@ -2,6 +2,7 @@ const API_BASE = "http://127.0.0.1:5000/api";
 const USER_ID = "default";
 let currentFile = null;
 let lastResult = null;
+let currentChatPlantId = null;
 
 const DISEASE_CATALOG = [
   { class: "Pepper__bell___Bacterial_spot", crop: "pepper", label: "Bell Pepper Bacterial Spot", healthy: false },
@@ -207,8 +208,10 @@ async function runAnalysis() {
     }
     const cropType = $("inputCropType").value;
     const growthStage = $("inputGrowthStage").value;
+    const plantId = $("inputPlantId").value.trim();
     if (cropType) formData.append("crop_type", cropType);
     if (growthStage) formData.append("growth_stage", growthStage);
+    if (plantId) formData.append("plant_id", plantId);
 
     const resp = await fetch(`${API_BASE}/predict`, { method: "POST", body: formData });
     clearInterval(stepTimer);
@@ -253,6 +256,7 @@ function displayResults(data) {
   $("diseaseBadge").className = `disease-badge ${isHealthy ? "healthy" : "diseased"}`;
   $("diseaseName").textContent = prediction.label;
   $("diseaseDesc").textContent = recommendation.description;
+  $("plantIdBadge").innerHTML = data.plant_id ? `🏷️ Plant ID: ${data.plant_id}` : "";
 
   const confFill = $("confidenceFill");
   confFill.style.width = "0%";
@@ -312,6 +316,13 @@ function displayResults(data) {
     `;
   } else { aiFuture.style.display = "none"; }
 
+  // Chatbot Initialization
+  if (data.plant_id) {
+    currentChatPlantId = data.plant_id;
+    $("chatbotToggle").style.animation = "pulse-dot 1.5s infinite";
+    setTimeout(() => $("chatbotToggle").style.animation = "", 5000);
+  }
+
   // Environmental Data Display
   const envCard = $("envCard");
   if (environmental_data && Object.keys(environmental_data).length > 0) {
@@ -327,6 +338,24 @@ function displayResults(data) {
       </div>
     `).join("");
   } else { envCard.style.display = "none"; }
+
+  // History Card
+  const historyCard = $("historyCard");
+  const historyList = $("historyList");
+  if (data.historical_progression && data.historical_progression.length > 0) {
+    historyCard.style.display = "block";
+    historyList.innerHTML = data.historical_progression.slice().reverse().map((h, idx) => `
+      <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${h.severity_percent < 20 ? 'var(--green-400)' : h.severity_percent < 50 ? 'var(--amber-400)' : 'var(--red-400)'}">
+        <div>
+          <span style="font-weight: 600; font-size: 14px;">Scan #${data.historical_progression.length - idx}</span>
+          <div style="font-size: 12px; opacity: 0.6;">${new Date(h.created_at).toLocaleString()}</div>
+        </div>
+        <div style="font-weight: 700; color: ${h.severity_percent < 20 ? 'var(--green-400)' : h.severity_percent < 50 ? 'var(--amber-400)' : 'var(--red-400)'}">${h.severity_percent.toFixed(1)}%</div>
+      </div>
+    `).join("");
+  } else {
+    historyCard.style.display = "none";
+  }
 
   // Recommendations
   const urgencyBadge = $("urgencyBadge");
@@ -414,10 +443,17 @@ async function loadDashboard() {
 
     // Disease distribution
     const ddList = $("diseaseDistList");
-    if (data.disease_distribution.length > 0) {
+    if (data.disease_distribution && data.disease_distribution.length > 0) {
       const maxCount = Math.max(...data.disease_distribution.map(d => d.count));
       ddList.innerHTML = data.disease_distribution.map(d => `
-        <div class="dd-item"><span class="dd-name">${d.disease}</span><div class="dd-bar-wrap"><div class="dd-bar-fill" style="width:${(d.count/maxCount)*100}%"></div></div><span class="dd-count">${d.count}</span></div>
+        <div class="dd-item" style="flex-wrap: wrap; margin-bottom: 6px;">
+          <div style="display:flex; width: 100%; align-items: center; gap: 10px;">
+            <span class="dd-name">${d.disease}</span><div class="dd-bar-wrap"><div class="dd-bar-fill" style="width:${(d.count/maxCount)*100}%"></div></div><span class="dd-count">${d.count}</span>
+          </div>
+          <div style="font-size: 0.72rem; color: var(--green-400); width: 100%; opacity: 0.8; margin-top: 2px;">
+            ${d.plant_ids || ''}
+          </div>
+        </div>
       `).join("");
     } else { ddList.innerHTML = '<div class="dash-empty">No disease data yet</div>'; }
 
@@ -634,9 +670,59 @@ async function checkApiStatus() {
     const data = await r.json();
     navStatus.innerHTML = `<div class="status-dot"></div><span>v${data.version} · ${data.classes} classes</span>`;
     navStatus.style.color = "var(--green-400)";
-  } catch {
+} catch {
     navStatus.innerHTML = `<div class="status-dot" style="background:var(--red-400);animation:none"></div><span style="color:var(--red-400)">Offline</span>`;
   }
+}
+
+// ─── CHATBOT ACTION ────────────────────────────
+if ($("chatBtnGlobal")) {
+  $("chatbotToggle").addEventListener("click", () => {
+    $("chatbotWindow").style.display = "flex";
+    $("chatbotToggle").style.display = "none";
+  });
+  $("chatbotClose").addEventListener("click", () => {
+    $("chatbotWindow").style.display = "none";
+    $("chatbotToggle").style.display = "flex";
+  });
+
+  $("chatBtnGlobal").addEventListener("click", async () => {
+    const query = $("chatInputGlobal").value.trim();
+    const plantId = currentChatPlantId || $("inputPlantId")?.value.trim() || null;
+    
+    if (!query) return;
+    if (!plantId) {
+       showToast("Please analyze an image or enter a Plant ID to chat.");
+       return;
+    }
+    
+    const thread = $("chatbotThreadGlobal");
+    thread.innerHTML += `<div style="align-self: flex-end; text-align: right; background: rgba(255,255,255,0.05); color: white; padding: 8px 12px; border-radius: 6px; font-size: 13px; max-width: 85%;"><strong>You:</strong> ${query}</div>`;
+    $("chatInputGlobal").value = "";
+    
+    const btn = $("chatBtnGlobal");
+    btn.textContent = "...";
+    btn.disabled = true;
+    
+    try {
+      const res = await fetch(`${API_BASE}/chatbot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plant_id: plantId, query: query })
+      });
+      const data = await res.json();
+      thread.innerHTML += `<div style="align-self: flex-start; text-align: left; background: rgba(22,163,74,0.1); color: var(--green-400); padding: 8px 12px; border-radius: 6px; font-size: 13px; max-width: 85%;"><strong>AI:</strong> ${data.response || data.error}</div>`;
+    } catch (err) {
+      thread.innerHTML += `<div style="align-self: flex-start; text-align: left; background: rgba(239,68,68,0.1); color: var(--red-400); padding: 8px 12px; border-radius: 6px; font-size: 13px; max-width: 85%;"><strong>Error:</strong> AI module error</div>`;
+    }
+    btn.textContent = "Ask";
+    btn.disabled = false;
+    thread.scrollTop = thread.scrollHeight;
+  });
+
+  $("chatInputGlobal").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("chatBtnGlobal").click();
+  });
 }
 
 // ─── TOAST ─────────────────────────────────────

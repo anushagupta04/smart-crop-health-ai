@@ -165,7 +165,32 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         );
+
+        CREATE TABLE IF NOT EXISTS Plants (
+            plant_id TEXT PRIMARY KEY,
+            crop_type TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS Observations (
+            id TEXT PRIMARY KEY,
+            plant_id TEXT,
+            image_path TEXT,
+            predicted_disease TEXT,
+            severity_percentage REAL,
+            confidence_score REAL,
+            timestamp TEXT DEFAULT (datetime('now')),
+            embedding TEXT,
+            FOREIGN KEY (plant_id) REFERENCES Plants(plant_id)
+        );
     """)
+    
+    # Try to add embedding column if it doesn't exist (for existing databases)
+    try:
+        db.execute("ALTER TABLE Observations ADD COLUMN embedding TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # Ensure default user exists
     cursor = db.execute("SELECT user_id FROM users WHERE user_id = 'default'")
     if cursor.fetchone() is None:
@@ -711,6 +736,7 @@ def predict():
     crop_type = request.form.get("crop_type", "")
     growth_stage = request.form.get("growth_stage", "vegetative")
     crop_id = request.form.get("crop_id", "")
+    plant_id = request.form.get("plant_id", "").strip()
 
     env_data = {}
     for field in ["temperature", "humidity", "rainfall", "soil_moisture", "soil_ph"]:
@@ -775,15 +801,53 @@ def predict():
         # Compute risk level
         risk_level = compute_risk_level(severity_percent, env_data, rec)
 
-        # Get prediction history for this user/crop
+        # Get predicted embedding for image similarity
+        conv_out_for_emb, _ = grad_model(img_array)
+        embedding_tensor = tf.reduce_mean(conv_out_for_emb[0], axis=(0, 1)).numpy()
+        norm = np.linalg.norm(embedding_tensor)
+        if norm > 0:
+            embedding_tensor = embedding_tensor / norm
+        embedding_json = json.dumps(embedding_tensor.tolist())
+
         db = get_db()
-        history_query = "SELECT severity_percent, created_at FROM predictions WHERE user_id = ?"
-        params = [user_id]
-        if crop_id:
-            history_query += " AND crop_id = ?"
-            params.append(crop_id)
-        history_query += " ORDER BY created_at ASC LIMIT 50"
-        history_rows = db.execute(history_query, params).fetchall()
+
+        # Image Similarity Check to Auto-Assign plant_id
+        if not plant_id:
+            rows = db.execute("SELECT plant_id, embedding FROM Observations WHERE embedding IS NOT NULL ORDER BY timestamp DESC LIMIT 200").fetchall()
+            max_sim = -1
+            best_plant = None
+            for row in rows:
+                if row["embedding"]:
+                    try:
+                        db_emb = np.array(json.loads(row["embedding"]))
+                        sim = np.dot(embedding_tensor, db_emb)
+                        if sim > max_sim:
+                            max_sim = sim
+                            best_plant = row["plant_id"]
+                    except:
+                        pass
+            
+            # Threshold for considering it the same plant
+            if max_sim > 0.92 and best_plant:
+                plant_id = best_plant
+            else:
+                plant_id = f"PLANT-{str(uuid.uuid4())[:8].upper()}"
+
+        # Ensure Plant exists
+        db.execute("INSERT OR IGNORE INTO Plants (plant_id, crop_type) VALUES (?, ?)", (plant_id, crop_type))
+        db.commit()
+        
+        # Insert observation into the new schema
+        obs_id = str(uuid.uuid4())
+        db.execute("""
+            INSERT INTO Observations (id, plant_id, image_path, predicted_disease, severity_percentage, confidence_score, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (obs_id, plant_id, filepath, predicted_label, severity_percent, confidence, embedding_json))
+        db.commit()
+
+        # Retrieve Plant History
+        history_query = "SELECT severity_percentage as severity_percent, timestamp as created_at FROM Observations WHERE plant_id = ? ORDER BY timestamp ASC LIMIT 50"
+        history_rows = db.execute(history_query, [plant_id]).fetchall()
         history = [{"severity_percent": row["severity_percent"] or 0, "created_at": row["created_at"]} for row in history_rows]
 
         # AI Recommendation
@@ -794,7 +858,7 @@ def predict():
         # Future prediction
         future_pred = predict_future_severity(history)
 
-        # Store prediction in DB
+        # Store prediction in older DB (backward compatibility)
         prediction_id = str(uuid.uuid4())
         db.execute("""
             INSERT INTO predictions (prediction_id, user_id, crop_id, disease_class, disease_label,
@@ -817,6 +881,7 @@ def predict():
         result = {
             "success": True,
             "prediction_id": prediction_id,
+            "plant_id": plant_id,
             "prediction": {
                 "class": predicted_class,
                 "label": predicted_label,
@@ -839,6 +904,7 @@ def predict():
             "ai_assistant": ai_rec,
             "future_prediction": future_pred,
             "alerts": alerts,
+            "historical_progression": history,
             "environmental_data": env_data if env_data else None
         }
 
@@ -849,8 +915,76 @@ def predict():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        # Don't delete the filepath right away if we're storing it in Observations as requested
+        # We can either keep it or use base64 in the future.
+        pass
+
+
+@app.route("/api/plant_history/<plant_id>", methods=["GET"])
+def api_plant_history(plant_id):
+    db = get_db()
+    rows = db.execute("SELECT id, image_path, predicted_disease, severity_percentage, confidence_score, timestamp FROM Observations WHERE plant_id = ? ORDER BY timestamp DESC", (plant_id,)).fetchall()
+    observations = [dict(row) for row in rows]
+    return jsonify({
+        "plant_id": plant_id,
+        "observations": observations
+    })
+
+
+@app.route("/api/chatbot", methods=["POST"])
+def api_chatbot():
+    import re
+    data = request.json
+    plant_id = data.get("plant_id")
+    query = data.get("query", "").lower()
+    
+    # Extract alternative plant ID from query if user specifies one (e.g., "PLANT-123")
+    match = re.search(r'(plant-[a-z0-9\-]+)', query)
+    if match:
+        plant_id = match.group(1).upper()
+    
+    # Basic greeting handling without needing a plant_id
+    if query.strip() in ["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "hi ai", "hello ai"] or query.startswith("hi ") or query.startswith("hello "):
+        return jsonify({"plant_id": plant_id, "response": "Hello! I am your Crop AI assistant. You can ask me how your plant is doing, ask if the disease trend is getting worse, or ask for treatment suggestions! What can I help you with?"})
+        
+    if not plant_id:
+        return jsonify({"error": "plant_id is required. You can mention a Plant ID like PLANT-123 in your message!"}), 400
+        
+    db = get_db()
+    rows = db.execute("SELECT predicted_disease, severity_percentage, timestamp FROM Observations WHERE plant_id = ? ORDER BY timestamp ASC", (plant_id,)).fetchall()
+    
+    if not rows:
+        return jsonify({"response": f"I couldn't find any records for Plant ID {plant_id}. Are you sure the ID is correct?"})
+    
+    latest = rows[-1]
+    sev_pct = round(latest['severity_percentage'], 1)
+    
+    if any(k in query for k in ["how", "doing", "status", "health"]):
+        if sev_pct < 5:
+            resp = f"Your plant {plant_id} is doing great! It was recently diagnosed as {latest['predicted_disease']} with a very low severity of {sev_pct}%."
+        else:
+            resp = f"Your plant {plant_id} is currently suffering from {latest['predicted_disease']} with a severity of {sev_pct}%."
+    elif any(k in query for k in ["worse", "trend", "better", "improving", "progress"]):
+        if len(rows) < 2:
+            resp = f"I only have one record for {plant_id} so far, so I can't determine if it's getting worse. Please check back after your next scan!"
+        else:
+            prev = round(rows[-2]["severity_percentage"], 1)
+            curr = sev_pct
+            if curr > prev + 5:
+                resp = f"Yes, the disease for {plant_id} seems to be getting worse. Severity increased from {prev}% to {curr}%."
+            elif curr < prev - 5:
+                resp = f"Good news! The disease for {plant_id} is improving. Severity decreased from {prev}% to {curr}%."
+            else:
+                resp = f"The condition for {plant_id} is relatively stable. Severity went from {prev}% to {curr}%."
+    elif any(k in query for k in ["do next", "treatment", "help", "suggestion", "advice", "recommendation", "what to do"]):
+        if "healthy" in latest["predicted_disease"].lower():
+            resp = "Just keep up the good work! No specific treatments are needed right now."
+        else:
+            resp = f"For {latest['predicted_disease']} on {plant_id}, you should consider immediate actions like removing affected leaves, improving airflow, and applying the recommended fungicides."
+    else:
+        resp = f"I'm a simple AI currently focused on specific queries. Try asking me for 'suggestions', 'treatments', about its 'trend' or 'how is it doing'! (Latest scan for {plant_id}: {latest['predicted_disease']} at {sev_pct}%)"
+        
+    return jsonify({"plant_id": plant_id, "response": resp})
 
 
 @app.route("/api/history/<user_id>", methods=["GET"])
@@ -997,10 +1131,19 @@ def get_dashboard(user_id):
 
     # Disease distribution
     disease_dist = db.execute("""
-        SELECT disease_label, COUNT(*) as cnt
-        FROM predictions WHERE user_id = ? AND is_healthy = 0
-        GROUP BY disease_label ORDER BY cnt DESC LIMIT 10
-    """, (user_id,)).fetchall()
+        SELECT predicted_disease as disease_label, 
+               COUNT(*) as cnt, 
+               GROUP_CONCAT(plant_id, ', ') as plant_ids
+        FROM (
+            SELECT plant_id, predicted_disease 
+            FROM Observations 
+            GROUP BY plant_id 
+            HAVING timestamp = MAX(timestamp)
+        )
+        WHERE predicted_disease NOT LIKE '%healthy%'
+        GROUP BY predicted_disease 
+        ORDER BY cnt DESC LIMIT 10
+    """).fetchall()
 
     return jsonify({
         "user_id": user_id,
@@ -1038,7 +1181,8 @@ def get_dashboard(user_id):
         } for a in unread_alerts],
         "disease_distribution": [{
             "disease": d["disease_label"],
-            "count": d["cnt"]
+            "count": d["cnt"],
+            "plant_ids": d["plant_ids"]
         } for d in disease_dist]
     })
 
